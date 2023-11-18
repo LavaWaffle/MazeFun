@@ -126,15 +126,12 @@ class Spot:
                              (self.x+5, self.y+5, self.width-8, self.width-8), 10)
 
     def update_neighbors(self, grid, walls):
-        spot_in_wall = False
         other_spots = []
         for wall in walls:
             if wall.spot1 == self:
-                spot_in_wall = True
                 if wall.spot2 not in other_spots:
                     other_spots.append(wall.spot2)
             elif wall.spot2 == self:
-                spot_in_wall = True
                 if wall.spot1 not in other_spots:
                     other_spots.append(wall.spot1)
                 
@@ -155,9 +152,9 @@ class Spot:
             self.neighbors.append(grid[self.row][self.col - 1])
 
         # check if neighbors include any other_spots. If so remove that neighbor
-        for neighbor in self.neighbors:
-            if neighbor in other_spots:
-                self.neighbors.remove(neighbor)
+        for spot in other_spots:
+            if spot in self.neighbors:
+                self.neighbors.remove(spot)
         
     def __lt__(self, other):
         return False
@@ -308,7 +305,7 @@ def algorithm(draw, grid, start, end) -> dict[bool, List[Spot]]:
             current.make_closed()
     return [False, []]
 
-def set_grid_to_snapshot(grid, snapshot):
+def set_grid_to_snapshot(grid, snapshot, walls):
     for i in range(len(grid)):
         for j in range(len(grid[i])):
             grid[i][j].color = snapshot[i][j].color
@@ -316,33 +313,222 @@ def set_grid_to_snapshot(grid, snapshot):
             grid[i][j].text_rect = snapshot[i][j].text_rect
             grid[i][j].border = snapshot[i][j].border
             grid[i][j].temp_color = snapshot[i][j].temp_color
+    
+    for i in range(len(grid)):
+        for j in range(len(grid[i])):
+            grid[i][j].update_neighbors(grid, walls)
 
 
-def gate_algorithm(draw, grid: List[List[Spot]], start: Spot, gate_a: Spot, gate_b: Spot, gate_c: Spot, end: Spot):
+from time import sleep
+
+from enum import Enum
+class Instruction(Enum):
+    Forward = 1
+    Backward = 2
+    TurnLeft = 3
+    TurnRight = 4
+
+class Direction(Enum):
+    UP = 1
+    DOWN = 2
+    LEFT = 3
+    RIGHT = 4
+class Instructions:
+    def __init__(self, direction: Direction, lots_of_spots: List[List[Spot]]):
+        self.instructions: List[Instruction] = []
+        self.direction = direction
+        self.turns = 0
+        self.moves = 0
+        previous_spot = None
+
+        for spots in lots_of_spots:
+            for spot in spots:
+                if previous_spot is None:
+                    previous_spot = spot
+                    continue
+                
+                is_special = False
+                if spots == lots_of_spots[-1] and spot == spots[-1]:
+                    is_special = True
+                elif spot == spots[0]:
+                    is_special = True
+
+                x_diff = spot.row - previous_spot.row
+                y_diff = spot.col - previous_spot.col
+
+                previous_spot = spot
+
+                if x_diff == 1:
+                    # Move right one
+                    if(self.direction == Direction.LEFT) and not is_special:
+                        self.backward()
+                    else:
+                        self.face_direction(Direction.RIGHT)
+                        self.forward()
+                elif x_diff == -1:
+                    # Move left one
+                    if(self.direction == Direction.RIGHT) and not is_special:
+                        self.backward()
+                    else:
+                        self.face_direction(Direction.LEFT)
+                        self.forward()
+                elif y_diff == 1:
+                    # Move down one
+                    if(self.direction == Direction.UP) and not is_special:
+                        self.backward()
+                    else:
+                        self.face_direction(Direction.DOWN)
+                        self.forward()
+                elif y_diff == -1:
+                    # Move up one
+                    if(self.direction == Direction.DOWN) and not is_special:
+                        self.backward()
+                    else:
+                        self.face_direction(Direction.UP)
+                        self.forward()
+    
+    def __repr__(self):
+        return f"Instructions: {self.instructions}, turns: {self.turns}, moves: {self.moves}"
+    
+    def turn(self, left_or_right):
+        if left_or_right == "left":
+            self.instructions.append(Instruction.TurnLeft)
+        elif left_or_right == "right":
+            self.instructions.append(Instruction.TurnRight)
+        self.turns += 1
+    
+    def face_direction(self, desired_direction: Direction):
+        if(self.direction != desired_direction):
+            if (self.direction == Direction.UP and desired_direction == Direction.RIGHT):
+                self.turn("right")
+            elif (self.direction == Direction.UP and desired_direction == Direction.LEFT):
+                self.turn("left")
+            elif (self.direction == Direction.UP and desired_direction == Direction.DOWN):
+                self.turn("right")
+                self.turn("right")
+            elif (self.direction == Direction.DOWN and desired_direction == Direction.RIGHT):
+                self.turn("left")
+            elif (self.direction == Direction.DOWN and desired_direction == Direction.LEFT):
+                self.turn("right")
+            elif (self.direction == Direction.DOWN and desired_direction == Direction.UP):
+                self.turn("right")
+                self.turn("right")
+            elif (self.direction == Direction.LEFT and desired_direction == Direction.RIGHT):
+                self.turn("right")
+                self.turn("right")
+            elif (self.direction == Direction.LEFT and desired_direction == Direction.DOWN):
+                self.turn("left")
+            elif (self.direction == Direction.LEFT and desired_direction == Direction.UP):
+                self.turn("right")
+            elif (self.direction == Direction.RIGHT and desired_direction == Direction.LEFT):
+                self.turn("right")
+                self.turn("right")
+            elif (self.direction == Direction.RIGHT and desired_direction == Direction.DOWN):
+                self.turn("right")
+            elif (self.direction == Direction.RIGHT and desired_direction == Direction.UP):
+                self.turn("left")
+            self.direction = desired_direction
+
+    def forward(self):
+        self.instructions.append(Instruction.Forward)
+        self.moves += 1
+
+    def backward(self):
+        self.instructions.append(Instruction.Backward)
+        self.moves += 1
+    
+        
+
+
+def gate_algorithm(draw, grid: List[List[Spot]], start: Spot, gate_a: Spot, gate_b: Spot, gate_c: Spot, end: Spot, walls: List[Wall]):
     grid_snapshot = [[spot.clone() for spot in row] for row in grid]
-    print(grid_snapshot[1][5].color)
-    start_to_a = algorithm(draw, grid, start, gate_a)
-    sleep(5)
-    if start_to_a[0]:
-        set_grid_to_snapshot(grid, grid_snapshot)
-        print(grid_snapshot[1][5].color)
-        a_to_b = algorithm(draw, grid, gate_a, gate_b)
-        sleep(5)
-        if a_to_b[0]:
-            set_grid_to_snapshot(grid, grid_snapshot)
-            print(grid_snapshot[1][5].color)
-            b_to_c = algorithm(draw, grid, gate_b, gate_c)
-            sleep(5)
-            if b_to_c[0]:
-                set_grid_to_snapshot(grid, grid_snapshot)
-                print(grid_snapshot[1][5].color)
-                c_to_end = algorithm(draw, grid, gate_c, end)
-                sleep(5)
-                if c_to_end[0]:
-                    print("Found path")
-                    print(c_to_end[1])
+    
+    mini_paths = {}
+    
+    mini_paths['start'] = {}
+    mini_paths['start']['A'] = algorithm(draw, grid, start, gate_a)[1][::-1]
+    set_grid_to_snapshot(grid, grid_snapshot, walls)
+    sleep(.1)
+    mini_paths['start']['B'] = algorithm(draw, grid, start, gate_b)[1][::-1]
+    set_grid_to_snapshot(grid, grid_snapshot, walls)
+    sleep(.1)
+    mini_paths['start']['C'] = algorithm(draw, grid, start, gate_c)[1][::-1]
+    sleep(.1)
 
+    mini_paths['A'] = {}
+    set_grid_to_snapshot(grid, grid_snapshot, walls)
+    mini_paths['A']['B'] = algorithm(draw, grid, gate_a, gate_b)[1][::-1]
+    sleep(.1)
+    set_grid_to_snapshot(grid, grid_snapshot, walls)
+    mini_paths['A']['C'] = algorithm(draw, grid, gate_a, gate_c)[1][::-1]
+    sleep(.1)
+    set_grid_to_snapshot(grid, grid_snapshot, walls)
+    mini_paths['A']['END'] = algorithm(draw, grid, gate_a, end)[1][::-1]
+    sleep(.1)
 
+    mini_paths['B'] = {}
+    set_grid_to_snapshot(grid, grid_snapshot, walls)
+    mini_paths['B']['A'] = algorithm(draw, grid, gate_b, gate_a)[1][::-1]
+    sleep(.1)
+    set_grid_to_snapshot(grid, grid_snapshot, walls)
+    mini_paths['B']['C'] = algorithm(draw, grid, gate_b, gate_c)[1][::-1]
+    sleep(.1)
+    set_grid_to_snapshot(grid, grid_snapshot, walls)
+    mini_paths['B']['END'] = algorithm(draw, grid, gate_b, end)[1][::-1]
+    sleep(.1)
+
+    mini_paths['C'] = {}
+    set_grid_to_snapshot(grid, grid_snapshot, walls)
+    mini_paths['C']['A'] = algorithm(draw, grid, gate_c, gate_a)[1][::-1]
+    sleep(.1)
+    set_grid_to_snapshot(grid, grid_snapshot, walls)
+    mini_paths['C']['B'] = algorithm(draw, grid, gate_c, gate_b)[1][::-1]
+    sleep(.1)
+    set_grid_to_snapshot(grid, grid_snapshot, walls)
+    mini_paths['C']['END'] = algorithm(draw, grid, gate_c, end)[1][::-1]
+    sleep(.1)
+
+    set_grid_to_snapshot(grid, grid_snapshot, walls)
+    print("DONE")
+    paths: dict[str, List[List[Spot]]] = {
+        'start-a-b-c-end': [mini_paths['start']['A'], mini_paths['A']['B'], mini_paths['B']['C'], mini_paths['C']['END'] + [end]],
+        'start-a-c-b-end': [mini_paths['start']['A'], mini_paths['A']['C'], mini_paths['C']['B'], mini_paths['B']['END'] + [end]],
+        'start-b-a-c-end': [mini_paths['start']['B'], mini_paths['B']['A'], mini_paths['A']['C'], mini_paths['C']['END'] + [end]],
+        'start-b-c-a-end': [mini_paths['start']['B'], mini_paths['B']['C'], mini_paths['C']['A'], mini_paths['A']['END'] + [end]],
+        'start-c-a-b-end': [mini_paths['start']['C'], mini_paths['C']['A'], mini_paths['A']['B'], mini_paths['B']['END'] + [end]],
+        'start-c-b-a-end': [mini_paths['start']['C'], mini_paths['C']['B'], mini_paths['B']['A'], mini_paths['A']['END'] + [end]]
+    }
+
+    # # draw path start-c-b-a-end
+    # for spot in paths['start-c-b-a-end']:
+    #     spot.make_path()
+    #     draw()
+    #     sleep(0.5)
+
+    # loop over paths and print each key and value
+    for key, value in paths.items():
+        print(key, ' : ', len(value), ' : ', value)
+    
+    # find path with least amount of turns
+    least_turns = 100000
+    all_instructions = []
+    initial_direction = Direction.UP
+    # get user input for direction
+    user_direction = input("Enter direction (up, down, left, right): ")
+    if user_direction == "down":
+        initial_direction = Direction.DOWN
+    elif user_direction == "left":
+        initial_direction = Direction.LEFT
+    elif user_direction == "right":
+        initial_direction = Direction.RIGHT
+    for key, value in paths.items():
+        instructions = Instructions(Direction.UP, value)
+        all_instructions.append(instructions)
+        if instructions.turns < least_turns:
+            least_turns = instructions.turns
+            instructions_with_least_turns = instructions
+
+    return instructions_with_least_turns
 
 # Make grid
 def make_grid(rows, width):
@@ -523,7 +709,7 @@ def main(win, width):
 
                     # Run algorithm
                     owo = gate_algorithm(lambda: draw(win, grid, ROWS, width, walls), grid,
-                              start, gate_a, gate_b, gate_c, end)
+                              start, gate_a, gate_b, gate_c, end, walls)
                     print(owo)
                     started = False
                 if event.key == pygame.K_r:
