@@ -1,8 +1,8 @@
 import pygame
 import math
 from queue import PriorityQueue
+from typing import List
 from time import sleep
-
 pygame.init()
 
 WIDTH = 500
@@ -68,6 +68,9 @@ class Spot:
     # Reset spot
     def reset(self):
         self.color = WHITE
+        self.text = None
+        self.text_rect = None
+        self.border = None
 
     # Make spot closed
     def make_closed(self):
@@ -118,6 +121,9 @@ class Spot:
                              (self.x, self.y, self.width, self.width))
         if self.text != None:
             win.blit(self.text, self.text_rect)
+        if self.border != None:
+            pygame.draw.rect(win, self.border,
+                             (self.x+5, self.y+5, self.width-8, self.width-8), 10)
 
     def update_neighbors(self, grid, walls):
         spot_in_wall = False
@@ -161,6 +167,20 @@ class Spot:
     
     def __repr__(self):
         return f"({self.row}, {self.col})"
+    
+    def clone(self):
+        temp = Spot(self.row, self.col, self.width, self.total_rows)
+        if self.temp_color is not None:
+            temp.temp_change(self.temp_color)
+        if self.color is not None:
+            temp.color = self.color
+        if self.text is not None:
+            temp.text = self.text
+        if self.text_rect is not None:
+            temp.text_rect = self.text_rect
+        if self.border is not None:
+            temp.border = self.border
+        return temp
 
 
 class Wall:
@@ -178,7 +198,6 @@ class Wall:
             self.y = spot2.y + spot2.width
             self.x = spot1.x
             self.width = spot2.width
-            print("Here")
         elif spot1.col < spot2.col:
             # Spot 1 is above spot 2
             # Define x and y of wall
@@ -218,15 +237,18 @@ def h(p1, p2):
     return abs(x1 - x2) + abs(y1 - y2)
 
 
-def reconstruct_path(came_from, current, draw):
+def reconstruct_path(came_from, current, draw) -> List[Spot]:
+    retval = []
     # Draw path
     while current in came_from:
         current = came_from[current]
         current.make_path()
+        retval.append(current)
         draw()
+    return retval
 
 
-def algorithm(draw, grid, start, end):
+def algorithm(draw, grid, start, end) -> dict[bool, List[Spot]]:
     count = 0
     # Priority queue
     open_set = PriorityQueue()
@@ -256,12 +278,8 @@ def algorithm(draw, grid, start, end):
         # If we found the end
         if current == end:
             # Draw path
-            reconstruct_path(came_from, end, draw)
-            # Make end
-            end.make_end()
-            # Make start
-            start.make_start()
-            return True
+            val = reconstruct_path(came_from, end, draw)
+            return [True, val]
 
         # Check neighbors
         for neighbor in current.neighbors:
@@ -288,7 +306,42 @@ def algorithm(draw, grid, start, end):
         if current != start:
             # Make current closed
             current.make_closed()
-    return False
+    return [False, []]
+
+def set_grid_to_snapshot(grid, snapshot):
+    for i in range(len(grid)):
+        for j in range(len(grid[i])):
+            grid[i][j].color = snapshot[i][j].color
+            grid[i][j].text = snapshot[i][j].text
+            grid[i][j].text_rect = snapshot[i][j].text_rect
+            grid[i][j].border = snapshot[i][j].border
+            grid[i][j].temp_color = snapshot[i][j].temp_color
+
+
+def gate_algorithm(draw, grid: List[List[Spot]], start: Spot, gate_a: Spot, gate_b: Spot, gate_c: Spot, end: Spot):
+    grid_snapshot = [[spot.clone() for spot in row] for row in grid]
+    print(grid_snapshot[1][5].color)
+    start_to_a = algorithm(draw, grid, start, gate_a)
+    sleep(5)
+    if start_to_a[0]:
+        set_grid_to_snapshot(grid, grid_snapshot)
+        print(grid_snapshot[1][5].color)
+        a_to_b = algorithm(draw, grid, gate_a, gate_b)
+        sleep(5)
+        if a_to_b[0]:
+            set_grid_to_snapshot(grid, grid_snapshot)
+            print(grid_snapshot[1][5].color)
+            b_to_c = algorithm(draw, grid, gate_b, gate_c)
+            sleep(5)
+            if b_to_c[0]:
+                set_grid_to_snapshot(grid, grid_snapshot)
+                print(grid_snapshot[1][5].color)
+                c_to_end = algorithm(draw, grid, gate_c, end)
+                sleep(5)
+                if c_to_end[0]:
+                    print("Found path")
+                    print(c_to_end[1])
+
 
 
 # Make grid
@@ -413,13 +466,24 @@ def main(win, width):
                 if not gate_a and not is_spot_special(spot, start, gate_b, gate_c, end) and not f_key_pressed:
                     gate_a = spot
                     gate_a.make_gate()
-                    gate_a.set_text("gate_a")
+                    gate_a.set_text("A")
+                # Set gate b
+                elif not gate_b and not is_spot_special(spot, start, gate_a, gate_c, end) and not f_key_pressed:
+                    gate_b = spot
+                    gate_b.make_gate()
+                    gate_b.set_text("B")
+                # Set gate c
+                elif not gate_c and not is_spot_special(spot, start, gate_a, gate_b, end) and not f_key_pressed:
+                    gate_c = spot
+                    gate_c.make_gate()
+                    gate_c.set_text("C")
                 # Set end
                 elif not end and not is_spot_special(spot, start, gate_a, gate_b, gate_c) and not f_key_pressed:
                     end = spot
                     end.make_end()
+                    end.set_text("end")
                 # Set barrier
-                elif spot is not start and spot is not end and not f_key_pressed:
+                elif not is_spot_special(spot, start, gate_a, gate_b, gate_c, end) and not f_key_pressed:
                     spot.make_barrier()
                 # Set start wall
                 elif f_key_pressed and spot1 is None:
@@ -440,6 +504,12 @@ def main(win, width):
                 spot.reset()
                 if spot == start:
                     start = None
+                elif spot == gate_a:
+                    gate_a = None
+                elif spot == gate_b:
+                    gate_b = None
+                elif spot == gate_c:
+                    gate_c = None
                 elif spot == end:
                     end = None
 
@@ -452,11 +522,15 @@ def main(win, width):
                             spot.update_neighbors(grid, walls)
 
                     # Run algorithm
-                    algorithm(lambda: draw(win, grid, ROWS, width, walls), grid,
-                              start, end)
+                    owo = gate_algorithm(lambda: draw(win, grid, ROWS, width, walls), grid,
+                              start, gate_a, gate_b, gate_c, end)
+                    print(owo)
                     started = False
                 if event.key == pygame.K_r:
                     start = None
+                    gate_a = None
+                    gate_b = None
+                    gate_c = None
                     end = None
                     walls = []
                     grid = make_grid(ROWS, width)
